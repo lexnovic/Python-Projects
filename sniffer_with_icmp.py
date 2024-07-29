@@ -4,6 +4,7 @@ import socket
 import struct
 import sys
 
+
 class IP:
     def __init__(self, buff=None):
         header = struct.unpack('<BBHHHBBH4s4s>', buff)
@@ -31,6 +32,7 @@ class IP:
         except Exception as e:
             print('%s No protocol for %s' % (e, self.protocol_num))
             self.protocol = str(self.protocol_num)
+
     def sniff(host):
         if os.name == 'nt':
             socket_protocol = socket.IPPROTO_IP
@@ -50,10 +52,21 @@ class IP:
                 raw_buffer = sniffer.recvfrom(65535)[0]
                 # create an IP header from the first 20 bytes
                 ip_header = IP(raw_buffer[0:20])
-                # print the detected protocol and hosts
-                print('Protocol: %s %s -> %s' % (ip_header.protocol,
-                                                    ip_header.src_address,
-                                                    ip_header.dst_address))
+                # if it is ICMP, we want it
+                if ip_header.protocol == 'ICMP':
+                    print('Protocol: %s %s -> %s' % (ip_header.protocol,
+                                                     ip_header.src_address, ip_header.dst_address))
+                    print(f'Version: {ip_header.ver}')
+                    print(f'Headers: {ip_header.ihl}   TTL: {ip_header.ttl}')
+
+                    # calculate where our ICMP packet starts
+                    offset = ip_header.ihl * 4
+                    buf = raw_buffer[offset:offset + 8]
+                    # create ICMP structure
+                    icmp_header = ICMP(buf)
+                    print('ICMP -> Type: %s Code: %s\n' %
+                          (icmp_header.type, icmp_header.code))
+
         except KeyboardInterrupt:
             # if on Windows, turn off promiscuous mode
             if os.name == 'nt':
