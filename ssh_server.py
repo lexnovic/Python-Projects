@@ -45,7 +45,7 @@ if __name__ == '__main__':
     server = Server()
     sshSession.start_server(server=server)
 
-    chan = bhSession.accept(20)
+    chan = sshSession.accept(20)
     if chan is None:
         print('*** No channel.')
         sys.exit(1)
@@ -63,8 +63,8 @@ if __name__ == '__main__':
             else:
                 chan.send('exit')
                 print('exiting')
-                bhSession.close()
+                sshSession.close()
                 break
     except KeyboardInterrupt:
-        bhSession.close()
+        sshSession.close()
 
