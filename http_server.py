@@ -1,92 +1,116 @@
-import os
 import socket
 import threading
-import sys
+import argparse
+import os
 
+FILE_DIR = ""
 
-def handle_client(client_socket, file_directory):
-    data = client.recv(1024).decode()
-    req = data.split('\r\n')
-    path = req[0].split(" ")[1]
+def create_headers(headers: dict):
+    return "\r\n".join([f"{k}: {v}" for k, v in headers.items()])
 
-    # Handle the root URL "/"
-    if path == "/":
-        response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello, World!".encode()
+def create_response(client, status: str, headers: dict, body: bytes):
+    resp = f"HTTP/1.1 {status}\r\n"
+    if len(headers) > 0:
+        resp += create_headers(headers) + "\r\n"
+    resp += "\r\n"
+    if len(body) > 0:
+        resp += body.decode()
+    client.send(resp.encode())
+    client.close()
 
-    # Handle the /echo/ path
-    elif path.startswith("/echo/"):
-        value = path.split("/echo/")[1]
-        length = len(value)
-        response = f"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {length}\r\n\r\n{value}".encode()
+    return
 
-    # Handle the /user-agent/ path
-    elif path.startswith("/user-agent"):
-        user_agent = req[2].split(": ")[1]
-        response = f"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(user_agent)}\r\n\r\n{user_agent}".encode()
+def extract_headers(data):
+    values = {}
+    for d in data:
+        k = d.split(":")[0]
+        v = d[len(k) + 2 :]
+        v = v.replace("\r\n", "")
+        values[k] = v
+    return values
 
-    # Handle the /files/ path for GET and POST
-    elif url.startswith("/files/"):
-        directory = sys.argv[2]
-        filename = path[7:]
+def handle_client(client):
+    global FILE_DIR
+    data = client.recv(1024)
+    if b"\r\n\r\n" not in data:
+        client.close()
+        return
 
-        # POST Request: Write file
-        if method == "POST":
-            headers = request_full.split("\r\n")
-            content_length = 0
+    header_data = data[: data.find(b"\r\n\r\n")].decode().split("\r\n")
+    body_data = data[data.find(b"\r\n\r\n") + 4 :]
+    headers = extract_headers(header_data[1:])
+    path_data = header_data[0].split(" ")
 
-            if content_length > 0:
-                # Read the remaining body based on content length
-                body = b''
-                while len(body) < content_length:
-                    body += client_socket.recv(min(1024, content_length - len(body)))
-                body = body.decode('utf-8')
+    path_data = header_data[0].split(" ")
+    path_type = path_data[0]
+    path_path = path_data[1]
+    path_http = path_data[2]
 
-                try:
-                    with open(f"{file_directory}/{filename}", 'w') as f:
-                        f.write(body)
-                    response = "HTTP/1.1 201 Created\r\n\r\n".encode()
-                except Exception as e:
-                    response = f"HTTP/1.1 404 Not Found\r\n\r\n".encode()
-            else:
-                response = f"HTTP/1.1 404 Not Found\r\n\r\n".encode()
+    if path_path == "/":
+        client.send("HTTP/1.1 200 OK\r\n\r\n".encode())
+        client.close()
+    else:
+        if "/files/" in path_path:
+            file = path_path[path_path.find("/files/") + 7 :]
+            p = f"{FILE_DIR}{file}"
+            if path_type == "GET":
+                if not os.path.exists(p):
+                    client.send("HTTP/1.1 404 Not Found\r\n\r\n".encode())
+                    client.close()
+                    return
 
-        # GET Request: Read file
-        elif method == "GET":
-            try:
-                with open(f"/{directory}/{filename}", "r") as f:
-                    body = f.read()
-                response = f"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {len(body)}\r\n\r\n{body}".encode()
-            except Exception as e:
-                response = f"HTTP/1.1 404 Not Found\r\n\r\n".encode()
-            else:
-                response = "HTTP/1.1 404 Not Found\r\n\r\n".encode()
+                contents = open(p, "rb").read()
+                return create_response(
+                    client,
+                    "200 OK",
+                    {
+                        "Content-Type": "application/octet-stream",
+                        "Content-Length": len(contents),
+                    },
+                    contents,
+                )
+    if path_type == "POST":
+        with open(p, "wb") as out:
+            out.write(body_data)
+        client.send("HTTP/1.1 201 Created\r\n\r\n".encode())
+        client.close()
+        return
 
-    # Send the response to the client
-    client.send(response)
-
+    if "/echo/" in path_path:
+        echo = path_path[path_path.find("/echo/") + 6 :]
+        return create_response(
+                client,
+                "200 OK",
+                {"Content-Type": "text/plain", "Content-Length": len(echo)},
+                echo.encode(),
+            )
+    if "/user-agent" in path_path:
+        return create_response(
+                client,
+                "200 OK",
+                {
+                    "Content-Type": "text/plain",
+                    "Content-Length": len(headers["User-Agent"]),
+                },
+                headers["User-Agent"].encode(),
+            )
+    client.send("HTTP/1.1 404 Not Found\r\n\r\n".encode())
+    client.close()
+    return
 
 def main():
-    # Check if the directory flag is present
-    if "--directory" in sys.argv:
-        dir_index = sys.argv.index("--directory") + 1
-        if dir_index < len(sys.argv):
-            file_directory = sys.argv[dir_index]
-        else:
-            print("Error: --directory flag requires a path argument.")
-            sys.exit(1)
-    else:
-        # Provide a default directory if the flag is missing
-        file_directory = "/tmp"
-        print(f"Warning: --directory flag is missing. Using default directory: {file_directory}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--directory")
+    args = parser.parse_args()
 
-    print(f"Serving files from directory: {file_directory}")
-
-    server_socket = socket.create_server(("localhost", 4221), reuse_port=True)
+    if "directory" in args:
+        global FILE_DIR
+        FILE_DIR = args.directory
+    server_socket = socket.create_server(("localhost", 4221))  # , reuse_port=True
 
     while True:
-        client_socket, client_address = server_socket.accept()
-        threading.Thread(target=handle_client, args=(client_socket, file_directory))
-
+        client, _ = server_socket.accept()  # wait for client
+        threading.Thread(target=handle_client, args=(client,)).start()
 
 if __name__ == "__main__":
     main()
