@@ -1,6 +1,5 @@
 import socket
 
-
 def ParseFlags(flags):
     qr = (flags >> 15) & 0b1  # 1 bit for Query/Response Indicator (QR)
     opcode = (flags >> 11) & 0b1111  # 4 bits for Operation Code (OPCODE)
@@ -24,7 +23,7 @@ def HeaderParse(buf):
     packet_id = int.from_bytes(header_bytes[:2], byteorder="big")
     flags = int.from_bytes(header_bytes[2:4], byteorder="big")
     qdcount = int.from_bytes(header_bytes[4:6], byteorder="big")
-    ancount = 1  # We are setting this to 1 as we will provide one answer
+    ancount = 1
     nscount = 0
     arcount = 0
 
